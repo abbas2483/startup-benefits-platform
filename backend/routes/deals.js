@@ -1,6 +1,12 @@
 const express = require('express');
 const Deal = require('../models/Deal');
 const { protect } = require('../middleware/auth');
+const {
+  buildDealsCacheKey,
+  getCachedDeals,
+  setCachedDeals,
+} = require('../utils/dealsCache');
+const { DEAL_LIST_FIELDS, DEFAULT_SORT } = require('../utils/dealsQuery');
 
 const router = express.Router();
 
@@ -10,6 +16,20 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { category, search, isLocked, sort } = req.query;
+
+    const cacheKey = buildDealsCacheKey({ category, search, isLocked, sort });
+    const cachedDeals = getCachedDeals(cacheKey);
+    if (cachedDeals) {
+      res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+      res.set('X-Cache', 'HIT');
+      return res.status(200).json({
+        success: true,
+        count: cachedDeals.length,
+        data: {
+          deals: cachedDeals,
+        },
+      });
+    }
 
     // start with base query for active deals
     let query = { isActive: true };
@@ -28,7 +48,7 @@ router.get('/', async (req, res) => {
     }
 
     // sorting - default to newest
-    let sortOption = { createdAt: -1 };
+    let sortOption = DEFAULT_SORT;
     if (sort === 'price_low') {
       sortOption = { discountedPrice: 1 };
     } else if (sort === 'price_high') {
@@ -37,8 +57,15 @@ router.get('/', async (req, res) => {
       sortOption = { discountPercentage: -1 };
     }
 
-    const deals = await Deal.find(query).sort(sortOption);
+    const deals = await Deal.find(query)
+      .select(DEAL_LIST_FIELDS)
+      .sort(sortOption)
+      .lean();
 
+    setCachedDeals(cacheKey, deals);
+
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.set('X-Cache', 'MISS');
     res.status(200).json({
       success: true,
       count: deals.length,

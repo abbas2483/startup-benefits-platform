@@ -7,6 +7,9 @@ const authRoutes = require('./routes/auth');
 const dealRoutes = require('./routes/deals');
 const claimRoutes = require('./routes/claims');
 const verificationRoutes = require('./routes/verification');
+const Deal = require('./models/Deal');
+const { buildDealsCacheKey, setCachedDeals } = require('./utils/dealsCache');
+const { DEAL_LIST_FIELDS, DEFAULT_SORT } = require('./utils/dealsQuery');
 
 const app = express();
 
@@ -18,7 +21,25 @@ app.use(express.urlencoded({ extended: true }));
 // Database connection
 mongoose
   .connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/startup-benefits')
-  .then(() => console.log('✅ MongoDB connected successfully'))
+  .then(async () => {
+    console.log('✅ MongoDB connected successfully');
+    try {
+      const cacheKey = buildDealsCacheKey({
+        category: undefined,
+        search: undefined,
+        isLocked: undefined,
+        sort: undefined,
+      });
+      const deals = await Deal.find({ isActive: true })
+        .select(DEAL_LIST_FIELDS)
+        .sort(DEFAULT_SORT)
+        .lean();
+      setCachedDeals(cacheKey, deals, 2 * 60_000);
+      console.log(`⚡ Deals cache warmed (${deals.length} items)`);
+    } catch (error) {
+      console.warn('⚠️ Deals cache warm failed:', error.message);
+    }
+  })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err);
     process.exit(1);

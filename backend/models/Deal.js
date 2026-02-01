@@ -109,6 +109,9 @@ const dealSchema = new mongoose.Schema(
 dealSchema.index({ category: 1, isActive: 1 });
 dealSchema.index({ isLocked: 1 });
 dealSchema.index({ title: 'text', description: 'text' });
+dealSchema.index({ isActive: 1, createdAt: -1 });
+dealSchema.index({ isActive: 1, discountedPrice: 1 });
+dealSchema.index({ isActive: 1, discountPercentage: -1 });
 
 // Calculate discount percentage before saving
 dealSchema.pre('save', function (next) {
